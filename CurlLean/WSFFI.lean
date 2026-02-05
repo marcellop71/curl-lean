@@ -82,6 +82,18 @@ opaque curl_ws_recv_on_connection
   : IO (UInt32 × String)
 
 /--
+Receive message on existing WebSocket connection with configurable buffer size:
+  handle: Connection handle from curl_ws_connect
+  bufferSize: Size of receive buffer in bytes (default 4096, max 1MB)
+Returns: (frameType, data). frameType: 0 = error, 1 = text, 2 = binary, 3 = close, 4 = ping, 5 = pong, 6 = continuation
+-/
+@[extern "lean_curl_ws_recv_on_connection_with_buffer"]
+opaque curl_ws_recv_on_connection_with_buffer
+  (handle : UInt32)
+  (bufferSize : UInt32)
+  : IO (UInt32 × String)
+
+/--
 Close WebSocket connection:
   handle: Connection handle from curl_ws_connect
 Returns: (status, message). Status: 0 = error, 1 = success
@@ -183,6 +195,39 @@ def receive (handle : UInt32) : IO (Except CurlWSError Frame) := do
 def receiveWithRetry (handle : UInt32) (maxRetries : Nat := 10) (retryDelayMs : UInt32 := 1) : IO (Except CurlWSError Frame) := do
   let rec loop (retriesLeft : Nat) : IO (Except CurlWSError Frame) := do
     match ← receive handle with
+    | Except.ok frame => pure (.ok frame)
+    | Except.error (CurlWSError.receiveWouldBlock msg) =>
+      if retriesLeft > 0 then do
+        -- Sleep for a short time before retry
+        IO.sleep retryDelayMs
+        loop (retriesLeft - 1)
+      else
+        pure (.error (CurlWSError.receiveFailed s!"Receive timed out after {maxRetries} retries: {msg}"))
+    | Except.error e => pure (.error e)
+  loop maxRetries
+
+def receiveWithBuffer (handle : UInt32) (bufferSize : UInt32) : IO (Except CurlWSError Frame) := do
+  try
+    let (frameTypeNum, data) ← Raw.curl_ws_recv_on_connection_with_buffer handle bufferSize
+
+    match parseFrameType frameTypeNum with
+    | none =>
+      -- Frame type 0 indicates an error from the C layer
+      if frameTypeNum == 0 then
+        -- Check if this is a recoverable "would block" error
+        if data.startsWith "RETRY:" then
+          pure (.error (CurlWSError.receiveWouldBlock data))
+        else
+          pure (.error (CurlWSError.receiveFailed s!"WebSocket receive error: {data}"))
+      else
+        pure (.error (CurlWSError.receiveFailed s!"Invalid frame type: {frameTypeNum}"))
+    | some frameType => pure (.ok (Frame.mk frameType data))
+  catch e =>
+    pure (.error (CurlWSError.unknownError e.toString))
+
+def receiveWithRetryAndBuffer (handle : UInt32) (bufferSize : UInt32) (maxRetries : Nat := 10) (retryDelayMs : UInt32 := 1) : IO (Except CurlWSError Frame) := do
+  let rec loop (retriesLeft : Nat) : IO (Except CurlWSError Frame) := do
+    match ← receiveWithBuffer handle bufferSize with
     | Except.ok frame => pure (.ok frame)
     | Except.error (CurlWSError.receiveWouldBlock msg) =>
       if retriesLeft > 0 then do

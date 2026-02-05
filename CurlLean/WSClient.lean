@@ -166,6 +166,34 @@ def receiveWithRetry (conn : WSConnection) (maxRetries : Nat := 3) (retryDelayMs
       pure frame
   | Except.error e => throw (liftWSError e)
 
+/-- Receive frame from persistent connection with configurable buffer size -/
+def receiveWithBuffer (conn : WSConnection) (bufferSize : UInt32) : WSM Frame := do
+  if !conn.isConnected then
+    throw WSError.connectionClosed
+
+  let result ← liftM (FFI.receiveWithBuffer conn.handle bufferSize)
+  match result with
+  | Except.ok frame =>
+    if frame.frameType == FrameType.close then
+      throw WSError.connectionClosed
+    else
+      pure frame
+  | Except.error e => throw (liftWSError e)
+
+/-- Receive frame with configurable buffer size and automatic retry -/
+def receiveWithRetryAndBuffer (conn : WSConnection) (bufferSize : UInt32) (maxRetries : Nat := 3) (retryDelayMs : UInt32 := 100) : WSM Frame := do
+  if !conn.isConnected then
+    throw WSError.connectionClosed
+
+  let result ← liftM (FFI.receiveWithRetryAndBuffer conn.handle bufferSize maxRetries retryDelayMs)
+  match result with
+  | Except.ok frame =>
+    if frame.frameType == FrameType.close then
+      throw WSError.connectionClosed
+    else
+      pure frame
+  | Except.error e => throw (liftWSError e)
+
 /-- Receive JSON from persistent connection -/
 def receiveJson (conn : WSConnection) : WSM Json := do
   if !conn.isConnected then

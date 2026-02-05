@@ -314,6 +314,106 @@ lean_obj_res lean_curl_ws_recv_on_connection(
   return lean_io_result_mk_ok(pair);
 }
 
+// WebSocket receive on existing connection with configurable buffer size
+// Returns IO (UInt32 × String): frame type (0=error, 1=text, 2=binary, 3=close, 4=ping, 5=pong, 6=continuation), message data
+lean_obj_res lean_curl_ws_recv_on_connection_with_buffer(
+  uint32_t handle,
+  uint32_t buffer_size,
+  lean_obj_arg w
+) {
+  if (handle == 0 || handle > MAX_CONNECTIONS || g_connections[handle - 1] == NULL) {
+    lean_object* frame_type = lean_box_uint32(0);
+    lean_object* msg = lean_mk_string("ERROR: Invalid connection handle");
+    lean_object* pair = lean_alloc_ctor(0, 2, 0);
+    lean_ctor_set(pair, 0, frame_type);
+    lean_ctor_set(pair, 1, msg);
+    return lean_io_result_mk_ok(pair);
+  }
+
+  CURL* curl = g_connections[handle - 1];
+
+  // Clamp buffer size to reasonable limits (min 1KB, max 1MB)
+  if (buffer_size < 1024) buffer_size = 1024;
+  if (buffer_size > 1048576) buffer_size = 1048576;
+
+  // Allocate buffer dynamically
+  char* buffer = (char*)malloc(buffer_size);
+  if (!buffer) {
+    lean_object* frame_type = lean_box_uint32(0);
+    lean_object* msg = lean_mk_string("ERROR: Failed to allocate receive buffer");
+    lean_object* pair = lean_alloc_ctor(0, 2, 0);
+    lean_ctor_set(pair, 0, frame_type);
+    lean_ctor_set(pair, 1, msg);
+    return lean_io_result_mk_ok(pair);
+  }
+
+  // Receive WebSocket frame
+  size_t recv_bytes;
+  const struct curl_ws_frame *frame_info;
+
+  CURLcode rc = curl_ws_recv(curl, buffer, buffer_size, &recv_bytes, &frame_info);
+
+  if (rc != CURLE_OK) {
+    char error_msg[512];
+    if (rc == CURLE_AGAIN) {
+      // Special handling for "socket not ready" - this is often recoverable
+      snprintf(error_msg, sizeof(error_msg), "RETRY: Socket not ready for receive (CURLE_AGAIN). Try again later.");
+    } else {
+      snprintf(error_msg, sizeof(error_msg), "ERROR: curl_ws_recv failed: %s (code: %d)", curl_easy_strerror(rc), rc);
+    }
+    free(buffer);
+    lean_object* frame_type = lean_box_uint32(0);
+    lean_object* msg = lean_mk_string(error_msg);
+    lean_object* pair = lean_alloc_ctor(0, 2, 0);
+    lean_ctor_set(pair, 0, frame_type);
+    lean_ctor_set(pair, 1, msg);
+    return lean_io_result_mk_ok(pair);
+  }
+
+  // Check if frame_info is valid
+  if (frame_info == NULL) {
+    free(buffer);
+    lean_object* frame_type = lean_box_uint32(0);
+    lean_object* msg = lean_mk_string("ERROR: No frame info received");
+    lean_object* pair = lean_alloc_ctor(0, 2, 0);
+    lean_ctor_set(pair, 0, frame_type);
+    lean_ctor_set(pair, 1, msg);
+    return lean_io_result_mk_ok(pair);
+  }
+
+  // Determine frame type - check in priority order
+  uint32_t frame_type;
+  if (frame_info->flags & CURLWS_CLOSE) {
+    frame_type = 3; // Close frame
+  } else if (frame_info->flags & CURLWS_PING) {
+    frame_type = 4; // Ping frame
+  } else if (frame_info->flags & CURLWS_PONG) {
+    frame_type = 5; // Pong frame
+  } else if (frame_info->flags & CURLWS_BINARY) {
+    frame_type = 2; // Binary frame
+  } else if (frame_info->flags & CURLWS_CONT) {
+    frame_type = 6; // Continuation frame
+  } else {
+    frame_type = 1; // Text frame (default)
+  }
+
+  // Null-terminate the received data
+  if (recv_bytes < buffer_size) {
+    buffer[recv_bytes] = '\0';
+  } else {
+    buffer[buffer_size - 1] = '\0';
+  }
+
+  lean_object* frame_type_obj = lean_box_uint32(frame_type);
+  lean_object* msg = lean_mk_string(buffer);
+  lean_object* pair = lean_alloc_ctor(0, 2, 0);
+  lean_ctor_set(pair, 0, frame_type_obj);
+  lean_ctor_set(pair, 1, msg);
+
+  free(buffer);
+  return lean_io_result_mk_ok(pair);
+}
+
 // WebSocket close connection
 // Returns IO (UInt32 × String): status (0 on error, 1 on success), response or error message
 lean_obj_res lean_curl_ws_close_connection(
