@@ -315,6 +315,7 @@ lean_obj_res lean_curl_ws_recv_on_connection(
 }
 
 // WebSocket receive on existing connection with configurable buffer size
+// Handles large messages by reading in a loop until the full frame is received
 // Returns IO (UInt32 × String): frame type (0=error, 1=text, 2=binary, 3=close, 4=ping, 5=pong, 6=continuation), message data
 lean_obj_res lean_curl_ws_recv_on_connection_with_buffer(
   uint32_t handle,
@@ -347,62 +348,85 @@ lean_obj_res lean_curl_ws_recv_on_connection_with_buffer(
     return lean_io_result_mk_ok(pair);
   }
 
-  // Receive WebSocket frame
+  // Receive WebSocket frame - read in loop to handle large messages
+  size_t total_recv = 0;
   size_t recv_bytes;
-  const struct curl_ws_frame *frame_info;
+  const struct curl_ws_frame *frame_info = NULL;
+  uint32_t frame_type = 1; // Default to text
 
-  CURLcode rc = curl_ws_recv(curl, buffer, buffer_size, &recv_bytes, &frame_info);
+  while (total_recv < buffer_size - 1) {
+    CURLcode rc = curl_ws_recv(curl, buffer + total_recv, buffer_size - total_recv - 1, &recv_bytes, &frame_info);
 
-  if (rc != CURLE_OK) {
-    char error_msg[512];
     if (rc == CURLE_AGAIN) {
-      // Special handling for "socket not ready" - this is often recoverable
-      snprintf(error_msg, sizeof(error_msg), "RETRY: Socket not ready for receive (CURLE_AGAIN). Try again later.");
-    } else {
-      snprintf(error_msg, sizeof(error_msg), "ERROR: curl_ws_recv failed: %s (code: %d)", curl_easy_strerror(rc), rc);
+      if (total_recv == 0) {
+        // No data at all yet - signal retry
+        free(buffer);
+        lean_object* frame_type_obj = lean_box_uint32(0);
+        lean_object* msg = lean_mk_string("RETRY: Socket not ready for receive (CURLE_AGAIN). Try again later.");
+        lean_object* pair = lean_alloc_ctor(0, 2, 0);
+        lean_ctor_set(pair, 0, frame_type_obj);
+        lean_ctor_set(pair, 1, msg);
+        return lean_io_result_mk_ok(pair);
+      }
+      // We have some data but socket would block - continue with what we have
+      break;
     }
-    free(buffer);
-    lean_object* frame_type = lean_box_uint32(0);
-    lean_object* msg = lean_mk_string(error_msg);
-    lean_object* pair = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(pair, 0, frame_type);
-    lean_ctor_set(pair, 1, msg);
-    return lean_io_result_mk_ok(pair);
+
+    if (rc != CURLE_OK) {
+      char error_msg[512];
+      snprintf(error_msg, sizeof(error_msg), "ERROR: curl_ws_recv failed: %s (code: %d)", curl_easy_strerror(rc), rc);
+      free(buffer);
+      lean_object* frame_type_obj = lean_box_uint32(0);
+      lean_object* msg = lean_mk_string(error_msg);
+      lean_object* pair = lean_alloc_ctor(0, 2, 0);
+      lean_ctor_set(pair, 0, frame_type_obj);
+      lean_ctor_set(pair, 1, msg);
+      return lean_io_result_mk_ok(pair);
+    }
+
+    total_recv += recv_bytes;
+
+    // Check frame_info for frame type (only on first chunk)
+    if (frame_info != NULL && total_recv == recv_bytes) {
+      if (frame_info->flags & CURLWS_CLOSE) {
+        frame_type = 3;
+      } else if (frame_info->flags & CURLWS_PING) {
+        frame_type = 4;
+      } else if (frame_info->flags & CURLWS_PONG) {
+        frame_type = 5;
+      } else if (frame_info->flags & CURLWS_BINARY) {
+        frame_type = 2;
+      } else if (frame_info->flags & CURLWS_CONT) {
+        frame_type = 6;
+      } else {
+        frame_type = 1;
+      }
+    }
+
+    // Check if we've received the complete frame
+    if (frame_info != NULL && frame_info->bytesleft == 0) {
+      break; // Complete frame received
+    }
+
+    // Safety check - if recv_bytes is 0, avoid infinite loop
+    if (recv_bytes == 0) {
+      break;
+    }
   }
 
-  // Check if frame_info is valid
-  if (frame_info == NULL) {
+  // Handle case where no frame_info was received
+  if (frame_info == NULL && total_recv == 0) {
     free(buffer);
-    lean_object* frame_type = lean_box_uint32(0);
+    lean_object* frame_type_obj = lean_box_uint32(0);
     lean_object* msg = lean_mk_string("ERROR: No frame info received");
     lean_object* pair = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(pair, 0, frame_type);
+    lean_ctor_set(pair, 0, frame_type_obj);
     lean_ctor_set(pair, 1, msg);
     return lean_io_result_mk_ok(pair);
-  }
-
-  // Determine frame type - check in priority order
-  uint32_t frame_type;
-  if (frame_info->flags & CURLWS_CLOSE) {
-    frame_type = 3; // Close frame
-  } else if (frame_info->flags & CURLWS_PING) {
-    frame_type = 4; // Ping frame
-  } else if (frame_info->flags & CURLWS_PONG) {
-    frame_type = 5; // Pong frame
-  } else if (frame_info->flags & CURLWS_BINARY) {
-    frame_type = 2; // Binary frame
-  } else if (frame_info->flags & CURLWS_CONT) {
-    frame_type = 6; // Continuation frame
-  } else {
-    frame_type = 1; // Text frame (default)
   }
 
   // Null-terminate the received data
-  if (recv_bytes < buffer_size) {
-    buffer[recv_bytes] = '\0';
-  } else {
-    buffer[buffer_size - 1] = '\0';
-  }
+  buffer[total_recv] = '\0';
 
   lean_object* frame_type_obj = lean_box_uint32(frame_type);
   lean_object* msg = lean_mk_string(buffer);
