@@ -111,11 +111,11 @@
         "nixpkgs": "nixpkgs_2"
       },
       "locked": {
-        "lastModified": 1768677464,
-        "narHash": "sha256-n82hrfZ/JX0s34wjxSdgcGb9WjekoG1y9JXNmFYiuiU=",
+        "lastModified": 1769514383,
+        "narHash": "sha256-8y2euXePtxv8Swbw6HqvO9j4zUf6mBkdLqB+Lfqa6Mo=",
         "owner": "marcellop71",
         "repo": "zlog-lean",
-        "rev": "309bc89db1d57c0ef5061356ef50aeeadd27c9c5",
+        "rev": "430b8cb1aca1bebf710811f3bd274beb7253934b",
         "type": "github"
       },
       "original": {
