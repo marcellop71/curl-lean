@@ -1,14 +1,14 @@
-{"version": "1.1.0",
+{"version": "1.2.0",
  "packagesDir": ".lake/packages",
  "packages":
  [{"url": "git@github.com:marcellop71/zlog-lean.git",
    "type": "git",
    "subDir": null,
    "scope": "",
-   "rev": "f6fa3db89e48e835fb9752515088a82f5b53e4d4",
+   "rev": "63b7f560d601557b149619f982918757d0f086d9",
    "name": "zlogLean",
    "manifestFile": "lake-manifest.json",
-   "inputRev": "main",
+   "inputRev": "v4.31.0",
    "inherited": false,
    "configFile": "lakefile.lean"},
   {"url": "https://github.com/argumentcomputer/LSpec.git",
@@ -22,4 +22,5 @@
    "inherited": false,
    "configFile": "lakefile.toml"}],
  "name": "curlLean",
- "lakeDir": ".lake"}
+ "lakeDir": ".lake",
+ "fixedToolchain": false}
