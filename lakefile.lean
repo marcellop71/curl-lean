@@ -34,4 +34,4 @@ require LSpec from git
   "https://github.com/argumentcomputer/LSpec.git" @ "main"
 
 require zlogLean from git
-  "git@github.com:marcellop71/zlog-lean.git" @ "v4.31.0"
+  "git@github.com:marcellop71/zlog-lean.git" @ "v4.33.0"
