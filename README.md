@@ -43,7 +43,7 @@ curl-lean/
 │   ├── curl_shim.c          # Header shim
 │   ├── curl_ws_connect.c    # WebSocket connection management
 │   └── curl_easy_perform.c  # HTTP request implementation
-├── Tests/                   # Test suite
+├── CurlLeanTests/           # Regression tests: run-timeout-test.sh, run-ws-test.sh
 ├── lakefile.lean            # Build configuration
 └── lean-toolchain           # Lean version (v4.27.0-rc1)
 ```
@@ -144,8 +144,9 @@ let result ← runWS do
   conn.sendBinary "Binary data"
   conn.sendPing "heartbeat"
 
-  -- Receive and handle frames
-  let frame ← conn.receiveWithRetry 3 100
+  -- Receive one complete message (fragments and partial reads are reassembled),
+  -- waiting on the socket up to 300 ms; `none` if nothing arrived
+  let some frame ← conn.receiveTimeout 300 | IO.println "Nothing yet"
   match frame.frameType with
   | .text => IO.println s!"Text: {frame.data}"
   | .binary => IO.println s!"Binary: {frame.data}"

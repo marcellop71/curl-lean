@@ -72,9 +72,24 @@ opaque curl_ws_send_on_connection
   : IO (UInt32 × String)
 
 /--
-Receive message on existing WebSocket connection:
+Receive one complete message, waiting on the socket up to `timeoutMs` for it to start
+(0 = only what is already available). Fragmented messages and frames that arrive in
+pieces are reassembled.
   handle: Connection handle from curl_ws_connect
-Returns: (frameType, data). frameType: 0 = error, 1 = text, 2 = binary, 3 = close, 4 = ping, 5 = pong, 6 = continuation
+Returns: (frameType, data). frameType: 0 = nothing in time (data starts with "RETRY:")
+or error, 1 = text, 2 = binary, 3 = close, 4 = ping, 5 = pong
+-/
+@[extern "lean_curl_ws_recv_message"]
+opaque curl_ws_recv_message
+  (handle : UInt32)
+  (timeoutMs : UInt32)
+  : IO (UInt32 × String)
+
+/--
+Receive message on existing WebSocket connection: one complete message if one is
+available, without waiting.
+  handle: Connection handle from curl_ws_connect
+Returns: (frameType, data). frameType: 0 = error, 1 = text, 2 = binary, 3 = close, 4 = ping, 5 = pong
 -/
 @[extern "lean_curl_ws_recv_on_connection"]
 opaque curl_ws_recv_on_connection
@@ -173,6 +188,25 @@ def send (handle : UInt32) (message : String) (isBinary : Bool := false) : IO (E
   catch e =>
     pure (.error (CurlWSError.unknownError e.toString))
 
+/-- Interpret a (frameType, data) result of the C receive functions -/
+private def receiveResult (frameTypeNum : UInt32) (data : String) : Except CurlWSError Frame :=
+  match parseFrameType frameTypeNum with
+  | none =>
+    if frameTypeNum == 0 then
+      if data.startsWith "RETRY:" then .error (CurlWSError.receiveWouldBlock data)
+      else .error (CurlWSError.receiveFailed s!"WebSocket receive error: {data}")
+    else .error (CurlWSError.receiveFailed s!"Invalid frame type: {frameTypeNum}")
+  | some frameType => .ok (Frame.mk frameType data)
+
+/-- Receive one complete message, waiting up to `timeoutMs` for it to start.
+    `receiveWouldBlock` means nothing arrived in time. -/
+def receiveMessage (handle : UInt32) (timeoutMs : UInt32) : IO (Except CurlWSError Frame) := do
+  try
+    let (frameTypeNum, data) ← Raw.curl_ws_recv_message handle timeoutMs
+    pure (receiveResult frameTypeNum data)
+  catch e =>
+    pure (.error (CurlWSError.unknownError e.toString))
+
 def receive (handle : UInt32) : IO (Except CurlWSError Frame) := do
   try
     let (frameTypeNum, data) ← Raw.curl_ws_recv_on_connection handle
@@ -192,19 +226,14 @@ def receive (handle : UInt32) : IO (Except CurlWSError Frame) := do
   catch e =>
     pure (.error (CurlWSError.unknownError e.toString))
 
+/-- Receive one complete message, waiting up to `maxRetries * retryDelayMs` ms on the
+    socket (no sleeping between attempts: the wait ends as soon as data arrives) -/
 def receiveWithRetry (handle : UInt32) (maxRetries : Nat := 10) (retryDelayMs : UInt32 := 1) : IO (Except CurlWSError Frame) := do
-  let rec loop (retriesLeft : Nat) : IO (Except CurlWSError Frame) := do
-    match ← receive handle with
-    | Except.ok frame => pure (.ok frame)
-    | Except.error (CurlWSError.receiveWouldBlock msg) =>
-      if retriesLeft > 0 then do
-        -- Sleep for a short time before retry
-        IO.sleep retryDelayMs
-        loop (retriesLeft - 1)
-      else
-        pure (.error (CurlWSError.receiveFailed s!"Receive timed out after {maxRetries} retries: {msg}"))
-    | Except.error e => pure (.error e)
-  loop maxRetries
+  let budget := (maxRetries * retryDelayMs.toNat).toUInt32
+  match ← receiveMessage handle budget with
+  | .error (CurlWSError.receiveWouldBlock msg) =>
+    pure (.error (CurlWSError.receiveFailed s!"Receive timed out after {maxRetries} retries: {msg}"))
+  | r => pure r
 
 def receiveWithBuffer (handle : UInt32) (bufferSize : UInt32) : IO (Except CurlWSError Frame) := do
   try
@@ -225,19 +254,9 @@ def receiveWithBuffer (handle : UInt32) (bufferSize : UInt32) : IO (Except CurlW
   catch e =>
     pure (.error (CurlWSError.unknownError e.toString))
 
-def receiveWithRetryAndBuffer (handle : UInt32) (bufferSize : UInt32) (maxRetries : Nat := 10) (retryDelayMs : UInt32 := 1) : IO (Except CurlWSError Frame) := do
-  let rec loop (retriesLeft : Nat) : IO (Except CurlWSError Frame) := do
-    match ← receiveWithBuffer handle bufferSize with
-    | Except.ok frame => pure (.ok frame)
-    | Except.error (CurlWSError.receiveWouldBlock msg) =>
-      if retriesLeft > 0 then do
-        -- Sleep for a short time before retry
-        IO.sleep retryDelayMs
-        loop (retriesLeft - 1)
-      else
-        pure (.error (CurlWSError.receiveFailed s!"Receive timed out after {maxRetries} retries: {msg}"))
-    | Except.error e => pure (.error e)
-  loop maxRetries
+/-- As `receiveWithRetry`; messages are no longer limited by a buffer size -/
+def receiveWithRetryAndBuffer (handle : UInt32) (_bufferSize : UInt32) (maxRetries : Nat := 10) (retryDelayMs : UInt32 := 1) : IO (Except CurlWSError Frame) :=
+  receiveWithRetry handle maxRetries retryDelayMs
 
 def close (handle : UInt32) : IO (Except CurlWSError Unit) := do
   try

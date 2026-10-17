@@ -152,6 +152,21 @@ def receive (conn : WSConnection) : WSM Frame := do
       pure frame
   | Except.error e => throw (liftWSError e)
 
+/-- Receive one complete message, waiting up to `timeoutMs` for it to start; `none` if
+    nothing arrived in time. Throws `connectionClosed` on a close frame. -/
+def receiveTimeout (conn : WSConnection) (timeoutMs : UInt32) : WSM (Option Frame) := do
+  if !conn.isConnected then
+    throw WSError.connectionClosed
+
+  match ← liftM (FFI.receiveMessage conn.handle timeoutMs) with
+  | Except.ok frame =>
+    if frame.frameType == FrameType.close then
+      throw WSError.connectionClosed
+    else
+      pure (some frame)
+  | Except.error (CurlWSError.receiveWouldBlock _) => pure none
+  | Except.error e => throw (liftWSError e)
+
 /-- Receive frame from persistent connection with automatic retry for "would block" errors -/
 def receiveWithRetry (conn : WSConnection) (maxRetries : Nat := 3) (retryDelayMs : UInt32 := 100) : WSM Frame := do
   if !conn.isConnected then
