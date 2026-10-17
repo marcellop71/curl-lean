@@ -15,15 +15,23 @@ package curlLean where
 @[default_target]
 lean_lib CurlLean
 
+/-- Compile `src` into `oFile` with a build trace over `src` and `deps` (local headers,
+    `#include`d `.c` files), so editing any of them rebuilds the object and the archives
+    that use it. `weakArgs` (include paths) are kept out of the trace. -/
+def tracedO (oFile src : FilePath) (deps : Array FilePath := #[])
+    (weakArgs traceArgs : Array String := #[]) : SpawnM (Job FilePath) := do
+  let inputs ← (#[src] ++ deps).mapM inputTextFile
+  let srcJob ← (Job.collectArray inputs).mapM fun _ => pure src
+  buildO oFile srcJob weakArgs traceArgs
+
 target curl_shim_o pkg : FilePath := do
-  let srcFile := pkg.dir / "curl" / "curl_shim.c"
-  let oFile   := pkg.buildDir / "c" / "curl_shim.o"
-  IO.FS.createDirAll oFile.parent.get!
-  let curlInclude ← IO.getEnv "CURL_INCLUDE_DIR"
-  let curlIncludeDir := curlInclude.getD "/usr/local/include"
-  let flags := #["-fPIC", "-O2", "-I", (← getLeanIncludeDir).toString, "-I", curlIncludeDir]
-  compileO oFile srcFile flags
-  return .pure oFile
+  let curlDir := pkg.dir / "curl"
+  let curlIncludeDir := (← IO.getEnv "CURL_INCLUDE_DIR").getD "/usr/local/include"
+  -- curl_shim.c #includes the other two translation units
+  tracedO (pkg.buildDir / "c" / "curl_shim.o") (curlDir / "curl_shim.c")
+    #[curlDir / "curl_easy_perform.c", curlDir / "curl_ws_connect.c"]
+    (weakArgs := #["-I", (← getLeanIncludeDir).toString, "-I", curlIncludeDir])
+    (traceArgs := #["-fPIC", "-O2"])
 
 extern_lib libcurl_shim pkg := do
   let shimObj ← curl_shim_o.fetch
