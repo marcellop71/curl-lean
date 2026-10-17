@@ -3,7 +3,7 @@ import CurlLean.HttpFFI
 /-!
 Regression test: request timeouts must fire when the server stops answering.
 
-Run with `Tests/run-timeout-test.sh`, which starts `Tests/stall_server.py`
+Run with `CurlLeanTests/run-timeout-test.sh`, which starts `CurlLeanTests/stall_server.py`
 (paths `/silent`: never answers, `/midbody`: stalls after part of the body,
 `/ok`: normal response). Until 2026-10, `CURLOPT_CONNECT_ONLY` on HTTP
 transfers disabled the timeout and both stall cases hung forever.

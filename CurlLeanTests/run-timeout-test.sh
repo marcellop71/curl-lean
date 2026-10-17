@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 PORT="${PORT:-18080}"
 lake build timeout-test
-python3 Tests/stall_server.py "$PORT" > /dev/null 2>&1 &
+python3 CurlLeanTests/stall_server.py "$PORT" > /dev/null 2>&1 &
 SERVER=$!
 trap 'kill $SERVER 2>/dev/null' EXIT
 sleep 0.5
