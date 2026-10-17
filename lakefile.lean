@@ -15,6 +15,16 @@ package curlLean where
 @[default_target]
 lean_lib CurlLean
 
+lean_lib Tests where
+  globs := #[.submodules `Tests]
+
+/-- Regression test for request timeouts against a stalling server:
+    `Tests/run-timeout-test.sh` (starts the server, runs this). -/
+lean_exe «timeout-test» where
+  root := `Tests.Timeout
+  moreLinkArgs := #["-L/usr/lib/x86_64-linux-gnu", "-Wl,-rpath,/usr/lib/x86_64-linux-gnu",
+    "-L/usr/local/lib", "-Wl,-rpath,/usr/local/lib"]
+
 /-- Compile `src` into `oFile` with a build trace over `src` and `deps` (local headers,
     `#include`d `.c` files), so editing any of them rebuilds the object and the archives
     that use it. `weakArgs` (include paths) are kept out of the trace. -/

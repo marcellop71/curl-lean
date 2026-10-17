@@ -6,6 +6,17 @@
 #include <stdint.h>
 #include <stdio.h>
 
+// glibc CSU stubs. Lean's bundled start file (Scrt1.o) still references
+// __libc_csu_init and __libc_csu_fini, which glibc >= 2.34 no longer provides;
+// executables linked against the system glibc (needed for the system libcurl)
+// fail without them. Since 2.34 __libc_start_main runs the init/fini arrays itself
+// and ignores these hooks, so empty bodies are correct. Weak, so a strong
+// definition elsewhere (e.g. redis-lean's shim) wins when both are linked.
+__attribute__((weak)) void __libc_csu_init(int argc, char **argv, char **envp) {
+  (void)argc; (void)argv; (void)envp;
+}
+__attribute__((weak)) void __libc_csu_fini(void) {}
+
 typedef struct {
   char *data;
   size_t size;

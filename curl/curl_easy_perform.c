@@ -37,7 +37,10 @@ lean_obj_res lean_curl_easy_perform(
   curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, ""); // enable compression
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
-  curl_easy_setopt(curl, CURLOPT_CONNECT_ONLY, 2L);
+  // No CURLOPT_CONNECT_ONLY here: it is for WebSocket upgrades (curl_ws_connect.c).
+  // On an HTTP transfer it disabled the transfer timeout, so a server that stopped
+  // answering hung the call forever despite CURLOPT_TIMEOUT_MS (declbuild,
+  // 2026-09-08: an LLM request stalled for 4.5 h with a 180 s timeout).
   curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, 2048L); // 16 KB buffer
   curl_easy_setopt(curl, CURLOPT_TCP_NODELAY, 1L); // disable Nagle's algorithm
   curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
