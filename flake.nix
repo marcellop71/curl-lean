@@ -4,7 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    zlog-lean.url = "github:marcellop71/zlog-lean";
+    zlog-lean.url = "github:proofinity-it/zlog-lean";
   };
 
   outputs = { self, nixpkgs, flake-utils, zlog-lean }:

@@ -256,3 +256,8 @@ structure Config where
   verifySsl : Bool := false
   verbose : Bool := false
 ```
+
+## License
+
+Copyright © 2026 Proofinity s.r.l. Licensed under the Apache License,
+Version 2.0: see [LICENSE](LICENSE) and [NOTICE](NOTICE).

@@ -57,4 +57,4 @@ require LSpec from git
   "https://github.com/argumentcomputer/LSpec.git" @ "main"
 
 require zlogLean from git
-  "git@github.com:marcellop71/zlog-lean.git" @ "v4.35.0"
+  "https://github.com/proofinity-it/zlog-lean" @ "v4.35.0"

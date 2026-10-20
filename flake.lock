@@ -113,13 +113,13 @@
       "locked": {
         "lastModified": 1769514383,
         "narHash": "sha256-8y2euXePtxv8Swbw6HqvO9j4zUf6mBkdLqB+Lfqa6Mo=",
-        "owner": "marcellop71",
+        "owner": "proofinity-it",
         "repo": "zlog-lean",
         "rev": "430b8cb1aca1bebf710811f3bd274beb7253934b",
         "type": "github"
       },
       "original": {
-        "owner": "marcellop71",
+        "owner": "proofinity-it",
         "repo": "zlog-lean",
         "type": "github"
       }
